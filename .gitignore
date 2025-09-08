@@ -111,7 +111,7 @@ tmp/
 temp/
 
 # Database and uploads (exclude contents but keep folders)
-data/
-uploads/
-!data/.gitkeep
-!uploads/.gitkeep
+korjournal/data/*
+korjournal/uploads/*
+!korjournal/data/.gitkeep
+!korjournal/uploads/.gitkeep
