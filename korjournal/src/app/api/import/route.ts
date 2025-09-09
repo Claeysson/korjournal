@@ -103,16 +103,32 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    let message = `Import slutförd: ${imported} nya resor importerade, ${duplicates} dubbletter hoppades över`;
+    let message = `Import slutförd: ${imported} nya resor importerade`;
+    if (duplicates > 0) {
+      message += `, ${duplicates} dubbletter hoppades över`;
+    }
     if (errors > 0) {
       message += `, ${errors} fel uppstod`;
     }
+    
+    // Calculate import statistics
+    const totalAttempted = trips.length;
+    const successRate = totalAttempted > 0 ? ((imported / totalAttempted) * 100).toFixed(1) : '0';
+    
+    console.log(`Import Statistics:
+    - Total trips in CSV: ${totalAttempted}
+    - Successfully imported: ${imported}
+    - Duplicates skipped: ${duplicates}
+    - Errors: ${errors}
+    - Success rate: ${successRate}%`);
     
     return NextResponse.json({ 
       message,
       imported,
       duplicates,
-      errors
+      errors,
+      totalAttempted,
+      successRate: parseFloat(successRate)
     });
   } catch (error) {
     console.error('Import error:', error);

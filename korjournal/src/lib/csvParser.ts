@@ -10,6 +10,7 @@ function cleanText(text: string): string {
     .trim();
 }
 
+
 export function parseCSVData(csvContent: string, mapOkategoriseratToPrivat: boolean = false): Promise<Omit<Trip, 'id'>[]> {
   return new Promise((resolve) => {
     const results: Omit<Trip, 'id'>[] = [];
@@ -79,11 +80,16 @@ export function parseCSVData(csvContent: string, mapOkategoriseratToPrivat: bool
             });
 
             // Validate required fields
-            if (!trip.category || !trip.startDate || !trip.odometerStart || !trip.odometerEnd) {
-              errors.push(`Line ${i}: Missing required fields (category: ${trip.category}, startDate: ${trip.startDate}, odometerStart: ${trip.odometerStart}, odometerEnd: ${trip.odometerEnd})`);
+            if (!trip.category || !trip.startDate) {
+              errors.push(`Line ${i}: Missing required fields (category: ${trip.category}, startDate: ${trip.startDate})`);
               skippedLines++;
-            } else if (trip.odometerStart >= trip.odometerEnd) {
-              errors.push(`Line ${i}: Invalid odometer values (start: ${trip.odometerStart} >= end: ${trip.odometerEnd})`);
+            } else if (trip.odometerStart > trip.odometerEnd && trip.distance > 0) {
+              // Only reject if start > end AND distance is positive (indicates data error)
+              errors.push(`Line ${i}: Invalid odometer values (start: ${trip.odometerStart} > end: ${trip.odometerEnd}) with positive distance: ${trip.distance}`);
+              skippedLines++;
+            } else if (trip.odometerStart === 0 && trip.odometerEnd === 0 && trip.distance === 0) {
+              // Skip completely empty trips
+              errors.push(`Line ${i}: Empty trip with all zero values`);
               skippedLines++;
             } else {
               results.push(trip);
@@ -168,11 +174,16 @@ export function parseCSVData(csvContent: string, mapOkategoriseratToPrivat: bool
             });
 
             // Validate required fields
-            if (!trip.category || !trip.startDate || !trip.odometerStart || !trip.odometerEnd) {
-              errors.push(`Row ${i}: Missing required fields (category: ${trip.category}, startDate: ${trip.startDate}, odometerStart: ${trip.odometerStart}, odometerEnd: ${trip.odometerEnd})`);
+            if (!trip.category || !trip.startDate) {
+              errors.push(`Row ${i}: Missing required fields (category: ${trip.category}, startDate: ${trip.startDate})`);
               skippedLines++;
-            } else if (trip.odometerStart >= trip.odometerEnd) {
-              errors.push(`Row ${i}: Invalid odometer values (start: ${trip.odometerStart} >= end: ${trip.odometerEnd})`);
+            } else if (trip.odometerStart > trip.odometerEnd && trip.distance > 0) {
+              // Only reject if start > end AND distance is positive (indicates data error)
+              errors.push(`Row ${i}: Invalid odometer values (start: ${trip.odometerStart} > end: ${trip.odometerEnd}) with positive distance: ${trip.distance}`);
+              skippedLines++;
+            } else if (trip.odometerStart === 0 && trip.odometerEnd === 0 && trip.distance === 0) {
+              // Skip completely empty trips
+              errors.push(`Row ${i}: Empty trip with all zero values`);
               skippedLines++;
             } else {
               results.push(trip);
@@ -187,9 +198,25 @@ export function parseCSVData(csvContent: string, mapOkategoriseratToPrivat: bool
       }
     }
 
-    console.log(`Final parsed ${results.length} trips, ${skippedLines} skipped, ${errors.length} errors`);
+    const totalDataLines = lines.length > 2 ? lines.length - 1 : Math.max(0, results.length + skippedLines);
+    
+    console.log(`CSV Import Summary:
+    - Total data lines processed: ${totalDataLines}
+    - Successfully parsed: ${results.length} trips
+    - Skipped/invalid: ${skippedLines} lines
+    - Parsing errors: ${errors.length}
+    - Success rate: ${totalDataLines > 0 ? ((results.length / totalDataLines) * 100).toFixed(1) : 0}%`);
+    
     if (errors.length > 0) {
-      console.warn('CSV parsing errors:', errors.slice(0, 10)); // Log first 10 errors
+      console.warn('Detailed CSV parsing errors:');
+      errors.forEach((error, index) => {
+        if (index < 20) { // Log first 20 errors for better debugging
+          console.warn(`  ${index + 1}. ${error}`);
+        }
+      });
+      if (errors.length > 20) {
+        console.warn(`  ... and ${errors.length - 20} more errors`);
+      }
     }
     resolve(results);
   });
