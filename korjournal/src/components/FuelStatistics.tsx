@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Container, Card, Row, Col, Spinner, Alert, Table, Collapse, Form, Button } from 'react-bootstrap';
+import { useEffect, useState, useCallback } from 'react';
+import { Container, Card, Row, Col, Spinner, Alert, Table, Collapse, Form } from 'react-bootstrap';
 
 interface FuelStatistics {
   totalTrips: number;
@@ -52,11 +52,6 @@ export default function FuelStatistics({ className }: FuelStatisticsProps) {
   const [fuelPricePerLiter, setFuelPricePerLiter] = useState('16.50');
   const [electricityPricePerKwh, setElectricityPricePerKwh] = useState('2.50');
 
-  useEffect(() => {
-    loadPriceSettings();
-    fetchStatistics();
-  }, [categoryFilter, dateFromFilter, dateToFilter]);
-
   const loadPriceSettings = async () => {
     try {
       const response = await fetch('/api/settings/multiple?keys=fuelPricePerLiter,electricityPricePerKwh');
@@ -92,7 +87,7 @@ export default function FuelStatistics({ className }: FuelStatisticsProps) {
     }
   };
 
-  const fetchStatistics = async () => {
+  const fetchStatistics = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -112,7 +107,12 @@ export default function FuelStatistics({ className }: FuelStatisticsProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [categoryFilter, dateFromFilter, dateToFilter]);
+
+  useEffect(() => {
+    loadPriceSettings();
+    fetchStatistics();
+  }, [categoryFilter, dateFromFilter, dateToFilter, fetchStatistics]);
 
   const formatNumber = (num: number, decimals: number = 1) => {
     return num.toLocaleString('sv-SE', { 

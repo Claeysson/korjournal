@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Table, Pagination, Card, Badge, Spinner, Collapse, Form, Row, Col, Button, Container, Alert } from 'react-bootstrap';
+import { useState, useEffect, useCallback } from 'react';
+import { Table, Card, Spinner, Collapse, Form, Row, Col, Button, Alert } from 'react-bootstrap';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Trip } from '@/lib/database';
@@ -41,12 +41,6 @@ export default function TripList({ refresh }: TripListProps) {
   const [exportPersonNumber, setExportPersonNumber] = useState('');
   const [exportCarModel, setExportCarModel] = useState('');
 
-  useEffect(() => {
-    fetchTrips();
-    loadExportSettings();
-    fetchSummaryStats();
-  }, [currentPage, refresh, categoryFilter, dateFromFilter, dateToFilter, sortOrder]);
-
   const loadExportSettings = async () => {
     try {
       const response = await fetch('/api/settings/multiple?keys=exportDriver,exportRegNumber,exportPersonNumber,exportCarModel');
@@ -82,7 +76,7 @@ export default function TripList({ refresh }: TripListProps) {
     }
   };
 
-  const fetchTrips = async () => {
+  const fetchTrips = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -111,7 +105,7 @@ export default function TripList({ refresh }: TripListProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentPage, itemsPerPage, categoryFilter, dateFromFilter, dateToFilter, sortOrder]);
 
   const handleTripClick = (trip: Trip) => {
     setSelectedTrip(trip);
@@ -130,7 +124,7 @@ export default function TripList({ refresh }: TripListProps) {
   // Calculate summary statistics for filtered trips (fetch all filtered trips for accurate totals)
   const [summaryStats, setSummaryStats] = useState({ totalTrips: 0, totalDistance: 0, totalTime: '0h 0m' });
 
-  const fetchSummaryStats = async () => {
+  const fetchSummaryStats = useCallback(async () => {
     try {
       const params = new URLSearchParams({
         ...(categoryFilter && { category: categoryFilter }),
@@ -155,8 +149,13 @@ export default function TripList({ refresh }: TripListProps) {
       console.error('Error fetching summary stats:', error);
       setSummaryStats({ totalTrips: 0, totalDistance: 0, totalTime: '0h 0m' });
     }
-  };
+  }, [categoryFilter, dateFromFilter, dateToFilter]);
 
+  useEffect(() => {
+    fetchTrips();
+    loadExportSettings();
+    fetchSummaryStats();
+  }, [currentPage, refresh, categoryFilter, dateFromFilter, dateToFilter, sortOrder, fetchTrips, fetchSummaryStats]);
 
   const getCategoryBadge = (category: string) => {
     const variants: { [key: string]: string } = {
@@ -341,7 +340,7 @@ export default function TripList({ refresh }: TripListProps) {
       });
 
       // Main trips table
-      const mainTableStartY = (doc as any).lastAutoTable.finalY + 10;
+      const mainTableStartY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
       const tableData = allTrips.map((trip: Trip) => [
         formatDate(trip.startDate),
         trip.startPosition,

@@ -3,10 +3,11 @@ import { updateTrip } from '@/lib/database';
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const tripId = parseInt(params.id);
+    const resolvedParams = await params;
+    const tripId = parseInt(resolvedParams.id);
     const body = await request.json();
     const { category, notes } = body;
 

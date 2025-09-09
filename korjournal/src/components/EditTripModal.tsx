@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Modal, Form, Button, Alert } from 'react-bootstrap';
+import { Modal, Form } from 'react-bootstrap';
 import { Trip } from '@/lib/database';
 
 interface EditTripModalProps {
@@ -67,7 +67,7 @@ export default function EditTripModal({ show, onHide, trip, onSave }: EditTripMo
           message: 'Kunde inte spara ändringar' 
         });
       }
-    } catch (error) {
+    } catch {
       setSaveStatus({ 
         type: 'danger', 
         message: 'Ett fel uppstod vid sparande' 

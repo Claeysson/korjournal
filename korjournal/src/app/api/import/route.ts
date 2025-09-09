@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseCSVData } from '@/lib/csvParser';
-import { insertTrip, getSetting, getDatabase, DatabaseCorruptionError } from '@/lib/database';
+import { insertTrip, getSetting, DatabaseCorruptionError } from '@/lib/database';
 import fs from 'fs';
 import path from 'path';
 

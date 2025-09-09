@@ -10,7 +10,8 @@
       "Read(//Users/martin/Programmering/Javascript/Körjournal/src/app/api/import/**)",
       "Read(//Users/martin/Programmering/Javascript/Körjournal/src/lib/**)",
       "Read(//Users/martin/Programmering/Javascript/Körjournal/**)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(npm run build:*)"
     ],
     "deny": []
   }

@@ -33,13 +33,17 @@ export class DatabaseCorruptionError extends Error {
 }
 
 // Helper function to check if error is SQLite corruption
-function isSQLiteCorruptionError(error: any): boolean {
+function isSQLiteCorruptionError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  
+  const errorObj = error as { code?: string; message?: string };
   const corruptionCodes = ['SQLITE_CORRUPT', 'SQLITE_NOTADB', 'SQLITE_CANTOPEN'];
+  
   return corruptionCodes.some(code => 
-    error.code === code || 
-    error.message?.includes(code) || 
-    error.message?.includes('database disk image is malformed') ||
-    error.message?.includes('file is not a database')
+    errorObj.code === code || 
+    errorObj.message?.includes(code) || 
+    errorObj.message?.includes('database disk image is malformed') ||
+    errorObj.message?.includes('file is not a database')
   );
 }
 
@@ -236,10 +240,11 @@ export async function insertTrip(trip: Omit<Trip, 'id'>): Promise<number | false
       console.error('Rollback failed:', rollbackError);
     }
     
+    const errorObj = error as { code?: string; errno?: number; message?: string };
     console.log('Database error details:', {
-      code: (error as any).code,
-      errno: (error as any).errno,
-      message: (error as any).message
+      code: errorObj.code,
+      errno: errorObj.errno,
+      message: errorObj.message
     });
     
     // Check for database corruption
@@ -247,9 +252,9 @@ export async function insertTrip(trip: Omit<Trip, 'id'>): Promise<number | false
       throw new DatabaseCorruptionError('Database corruption detected during trip insertion');
     }
     
-    if ((error as any).code === 'SQLITE_CONSTRAINT_UNIQUE' || 
-        (error as any).code === 'SQLITE_CONSTRAINT' || 
-        (error as any).errno === 19) {
+    if (errorObj.code === 'SQLITE_CONSTRAINT_UNIQUE' || 
+        errorObj.code === 'SQLITE_CONSTRAINT' || 
+        errorObj.errno === 19) {
       console.log('Duplicate trip found, skipping:', {
         startDate: trip.startDate,
         odometerStart: trip.odometerStart,

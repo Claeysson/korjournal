@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Modal, Button, Form, Alert, ProgressBar } from 'react-bootstrap';
+import { Modal, Form } from 'react-bootstrap';
 
 interface ImportModalProps {
   show: boolean;
@@ -118,7 +118,7 @@ export default function ImportModal({ show, onHide, onImportComplete }: ImportMo
           message: result.error || 'Import misslyckades' 
         });
       }
-    } catch (error) {
+    } catch {
       setUploadStatus({ 
         type: 'danger', 
         message: 'Ett fel uppstod vid import av filen.' 
@@ -171,11 +171,11 @@ export default function ImportModal({ show, onHide, onImportComplete }: ImportMo
                 disabled={isUploading}
               />
               <label className="form-check-label fw-medium" htmlFor="mapOkategoriseratToPrivat">
-                Ändra automatiskt "Okategoriserat" till "Privat"
+                Ändra automatiskt &quot;Okategoriserat&quot; till &quot;Privat&quot;
               </label>
             </div>
             <div className="form-text text-muted">
-              När aktiverad kommer alla resor märkta som "Okategoriserat" att ändras till "Privat" vid import.
+              När aktiverad kommer alla resor märkta som &quot;Okategoriserat&quot; att ändras till &quot;Privat&quot; vid import.
             </div>
           </div>
 

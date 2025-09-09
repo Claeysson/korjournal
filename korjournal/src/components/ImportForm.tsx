@@ -71,7 +71,7 @@ export default function ImportForm({ onImportComplete }: ImportFormProps) {
           message: result.error || 'Import misslyckades' 
         });
       }
-    } catch (error) {
+    } catch {
       setUploadStatus({ 
         type: 'danger', 
         message: 'Ett fel uppstod vid import av filen.' 

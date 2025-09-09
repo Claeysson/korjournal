@@ -1,5 +1,3 @@
-import csv from 'csv-parser';
-import { Readable } from 'stream';
 import { Trip } from './database';
 
 function cleanText(text: string): string {
@@ -12,23 +10,8 @@ function cleanText(text: string): string {
     .trim();
 }
 
-function getColumnValue(row: any, possibleKeys: string[]): string {
-  for (const key of possibleKeys) {
-    if (row[key] !== undefined && row[key] !== null) {
-      return cleanText(String(row[key]));
-    }
-  }
-  return '';
-}
-
-interface ParseResult {
-  trips: Omit<Trip, 'id'>[];
-  errors: string[];
-  skippedLines: number;
-}
-
 export function parseCSVData(csvContent: string, mapOkategoriseratToPrivat: boolean = false): Promise<Omit<Trip, 'id'>[]> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const results: Omit<Trip, 'id'>[] = [];
     const errors: string[] = [];
     let skippedLines = 0;
@@ -36,7 +19,7 @@ export function parseCSVData(csvContent: string, mapOkategoriseratToPrivat: bool
     console.log('CSV content length:', csvContent.length);
     
     // Clean the content and remove BOM
-    let cleanedContent = csvContent
+    const cleanedContent = csvContent
       .replace(/^\uFEFF/, '') // Remove BOM
       .replace(/\u0000/g, '') // Remove null characters
       .replace(/\u00A0/g, ' '); // Replace non-breaking spaces
