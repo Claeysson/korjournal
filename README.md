@@ -222,12 +222,8 @@ The application includes automatic database corruption detection:
 
 ## Contributing
 
-1. Create feature branch from `dev`
+1. Create feature branch from `main`
 2. Make changes in `korjournal/` directory
-3. Test thoroughly with various CSV formats
+3. Test thoroughly
 4. Run linting and type checking
 5. Submit pull request
-
-## License
-
-Private project - All rights reserved
