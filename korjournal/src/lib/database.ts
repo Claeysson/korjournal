@@ -48,7 +48,7 @@ function isSQLiteCorruptionError(error: unknown): boolean {
 }
 
 // Database health check function
-async function validateDatabase(database: Database): Promise<boolean> {
+async function validateDatabase(database: Database, fileExistedBefore: boolean): Promise<{ isHealthy: boolean; isFreshDatabase: boolean }> {
   try {
     // Test basic connection
     await database.get('SELECT 1');
@@ -57,7 +57,7 @@ async function validateDatabase(database: Database): Promise<boolean> {
     const result = await database.get<{integrity_check: string}>('PRAGMA integrity_check');
     if (result?.integrity_check !== 'ok') {
       console.error('Database integrity check failed:', result?.integrity_check);
-      return false;
+      return { isHealthy: false, isFreshDatabase: false };
     }
     
     // Verify required tables exist
@@ -66,14 +66,21 @@ async function validateDatabase(database: Database): Promise<boolean> {
     `);
     
     if (tables.length < 2) {
-      console.error('Required database tables missing');
-      return false;
+      if (!fileExistedBefore) {
+        // Database file didn't exist before - this is a fresh installation, not corruption
+        console.log('Fresh database detected (file did not exist before), tables will be created');
+        return { isHealthy: true, isFreshDatabase: true };
+      } else {
+        // Database file existed but tables are missing - this indicates corruption
+        console.error('Database corruption detected: file existed but required tables are missing');
+        return { isHealthy: false, isFreshDatabase: false };
+      }
     }
     
-    return true;
+    return { isHealthy: true, isFreshDatabase: false };
   } catch (error) {
     console.error('Database validation failed:', error);
-    return false;
+    return { isHealthy: false, isFreshDatabase: false };
   }
 }
 
@@ -135,15 +142,27 @@ async function recoverDatabase(): Promise<Database | null> {
 
 export async function getDatabase(): Promise<Database> {
   if (!db) {
+    const dbPath = path.join(process.cwd(), 'data', 'trips.db');
+    
     try {
+      // Check if database file exists before opening
+      const fileExistedBefore = fs.existsSync(dbPath);
+      
+      // Ensure data directory exists
+      const dataDir = path.dirname(dbPath);
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+      
       db = await open({
-        filename: path.join(process.cwd(), 'data', 'trips.db'),
+        filename: dbPath,
         driver: sqlite3.Database
       });
 
       // Validate database health
-      const isHealthy = await validateDatabase(db);
-      if (!isHealthy) {
+      const validation = await validateDatabase(db, fileExistedBefore);
+      
+      if (!validation.isHealthy) {
         console.warn('Database corruption detected, attempting recovery...');
         await db.close();
         db = await recoverDatabase();
@@ -151,35 +170,13 @@ export async function getDatabase(): Promise<Database> {
         if (!db) {
           throw new Error('Database recovery failed');
         }
+      } else if (validation.isFreshDatabase) {
+        // Fresh database - create tables without showing corruption warning
+        console.log('Initializing fresh database with required tables...');
+        await createTables(db);
       } else {
-        // Database is healthy, ensure tables exist
-        await db.exec(`
-          CREATE TABLE IF NOT EXISTS trips (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            category TEXT NOT NULL,
-            startDate TEXT NOT NULL,
-            odometerStart INTEGER NOT NULL,
-            startPosition TEXT NOT NULL,
-            endDate TEXT NOT NULL,
-            odometerEnd INTEGER NOT NULL,
-            endDestination TEXT NOT NULL,
-            duration TEXT NOT NULL,
-            distance REAL NOT NULL,
-            fuelConsumption TEXT NOT NULL,
-            title TEXT NOT NULL,
-            batteryConsumption TEXT NOT NULL,
-            batteryRegeneration TEXT NOT NULL,
-            notes TEXT NOT NULL,
-            UNIQUE(startDate, odometerStart, odometerEnd)
-          )
-        `);
-
-        await db.exec(`
-          CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-          )
-        `);
+        // Existing healthy database - ensure tables exist (for backwards compatibility)
+        await createTables(db);
       }
     } catch (error) {
       console.error('Failed to initialize database:', error);
@@ -200,6 +197,37 @@ export async function getDatabase(): Promise<Database> {
     }
   }
   return db;
+}
+
+// Helper function to create database tables
+async function createTables(database: Database): Promise<void> {
+  await database.exec(`
+    CREATE TABLE IF NOT EXISTS trips (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category TEXT NOT NULL,
+      startDate TEXT NOT NULL,
+      odometerStart INTEGER NOT NULL,
+      startPosition TEXT NOT NULL,
+      endDate TEXT NOT NULL,
+      odometerEnd INTEGER NOT NULL,
+      endDestination TEXT NOT NULL,
+      duration TEXT NOT NULL,
+      distance REAL NOT NULL,
+      fuelConsumption TEXT NOT NULL,
+      title TEXT NOT NULL,
+      batteryConsumption TEXT NOT NULL,
+      batteryRegeneration TEXT NOT NULL,
+      notes TEXT NOT NULL,
+      UNIQUE(startDate, odometerStart, odometerEnd)
+    )
+  `);
+
+  await database.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )
+  `);
 }
 
 export async function insertTrip(trip: Omit<Trip, 'id'>): Promise<number | false> {

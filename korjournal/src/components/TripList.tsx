@@ -402,6 +402,231 @@ export default function TripList({ refresh }: TripListProps) {
     }
   };
 
+  const downloadPDF = async () => {
+    if (!exportDriver || !exportRegNumber || !exportPersonNumber || !exportCarModel) {
+      alert('Vänligen fyll i alla exportfält');
+      return;
+    }
+
+    // Fetch all trips within current filter (not just current page)
+    try {
+      const params = new URLSearchParams({
+        page: '1',
+        limit: '1000', // Get all trips
+        ...(categoryFilter && { category: categoryFilter }),
+        ...(dateFromFilter && { dateFrom: dateFromFilter }),
+        ...(dateToFilter && { dateTo: dateToFilter }),
+        ...(sortOrder && { sort: sortOrder })
+      });
+      
+      const response = await fetch(`/api/trips?${params}`);
+      const data = await response.json();
+      const allTrips = data.trips;
+
+      const doc = new jsPDF('landscape'); // Landscape orientation like the example
+      
+      // Title - centered
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      doc.text('KÖRJOURNAL', pageWidth / 2, 25, { align: 'center' });
+      
+      // Period - centered
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      const periodText = `Period: ${formatDate(dateFromFilter)} - ${formatDate(dateToFilter)}`;
+      doc.text(periodText, pageWidth / 2, 35, { align: 'center' });
+
+      // Calculate odometer values
+      let startOdometer = '';
+      let endOdometer = '';
+      if (allTrips.length > 0) {
+        // Sort trips by date to get first and last
+        const sortedTrips = [...allTrips].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+        startOdometer = `${sortedTrips[0].odometerStart} km`;
+        endOdometer = `${sortedTrips[sortedTrips.length - 1].odometerEnd} km`;
+      }
+
+      // Info table - separate columns for keys and values without vertical lines
+      const infoTableData = [
+        ['Förare:', exportDriver, 'Personnummer:', exportPersonNumber],
+        ['Bilens reg.nr:', exportRegNumber, 'Bilmärke/modell:', exportCarModel],
+        ['Mätarställning vid periodens början:', startOdometer, 'Mätarställning vid periodens slut:', endOdometer]
+      ];
+
+      autoTable(doc, {
+        startY: 45,
+        body: infoTableData,
+        styles: {
+          fontSize: 10,
+          cellPadding: 3,
+          fillColor: [255, 255, 255], // White background
+          lineColor: [0, 0, 0],
+          lineWidth: { top: 0.5, bottom: 0.5, left: 0.5, right: 0.5 }, // Only horizontal lines
+          textColor: [0, 0, 0],
+        },
+        columnStyles: {
+          0: { fontStyle: 'bold', fillColor: [255, 255, 255], textColor: [0, 0, 0] }, // Key columns with white background
+          1: { fillColor: [255, 255, 255], textColor: [0, 0, 0], halign: 'right' }, // Value columns with white background, right-aligned
+          2: { fontStyle: 'bold', fillColor: [255, 255, 255], textColor: [0, 0, 0] }, // Key columns with white background  
+          3: { fillColor: [255, 255, 255], textColor: [0, 0, 0], halign: 'right' }, // Value columns with white background, right-aligned
+        },
+        tableLineColor: [0, 0, 0],
+        tableLineWidth: 0.5,
+        margin: { left: 10, right: 10 },
+        willDrawCell: (data) => {
+          // Remove vertical lines between key-value pairs
+          if ((data.column.index === 0 && data.column.index + 1 === 1) || 
+              (data.column.index === 2 && data.column.index + 1 === 3)) {
+            data.cell.styles.lineWidth = { top: 0.5, bottom: 0.5, left: 0.5, right: 0 };
+          }
+          if (data.column.index === 1 || data.column.index === 3) {
+            data.cell.styles.lineWidth = { top: 0.5, bottom: 0.5, left: 0, right: 0.5 };
+          }
+        }
+      });
+
+      // Calculate summary by category
+      const categoryMap = new Map<string, { trips: number; distance: number }>();
+      allTrips.forEach((trip: Trip) => {
+        const category = trip.category;
+        if (!categoryMap.has(category)) {
+          categoryMap.set(category, { trips: 0, distance: 0 });
+        }
+        const stats = categoryMap.get(category)!;
+        stats.trips += 1;
+        stats.distance += trip.distance;
+      });
+
+      // Create summary table data with descriptions
+      const getCategoryDescription = (category: string) => {
+        switch (category) {
+          case 'Privat': return 'Privata resor';
+          case 'Arbete': return 'Tjänsteresor';
+          case 'Okategoriserat': return 'Övriga resor';
+          default: return category;
+        }
+      };
+
+      const summaryTableData = [];
+      let totalTripsCount = 0;
+      let totalDistanceSum = 0;
+
+      categoryMap.forEach((stats, category) => {
+        summaryTableData.push([
+          category,
+          stats.trips.toString(),
+          `${stats.distance.toFixed(1)} km`,
+          getCategoryDescription(category)
+        ]);
+        totalTripsCount += stats.trips;
+        totalDistanceSum += stats.distance;
+      });
+
+      // Add total row
+      summaryTableData.push([
+        'Totalt',
+        totalTripsCount.toString(),
+        `${totalDistanceSum.toFixed(1)} km`,
+        ''
+      ]);
+
+      // Summary table
+      const tableWidth = pageWidth - 20; // Full width minus margins
+      const colWidth = tableWidth / 4; // Equal width for 4 columns
+      
+      autoTable(doc, {
+        startY: 85,
+        head: [['Kategori', 'Antal resor', 'Sträcka', 'Beskrivning']],
+        body: summaryTableData,
+        theme: 'grid',
+        styles: {
+          fontSize: 8,
+          cellPadding: 2,
+          lineColor: [0, 0, 0],
+          lineWidth: 0.5,
+          fillColor: [255, 255, 255],
+          textColor: [0, 0, 0],
+          halign: 'left',
+        },
+        headStyles: {
+          fillColor: [220, 220, 220],
+          textColor: [0, 0, 0],
+          fontSize: 8,
+          fontStyle: 'bold',
+          halign: 'left',
+        },
+        columnStyles: {
+          0: { cellWidth: colWidth },
+          1: { cellWidth: colWidth },
+          2: { cellWidth: colWidth },
+          3: { cellWidth: colWidth }
+        },
+        margin: { left: 10, right: 10 },
+        tableWidth: tableWidth
+      });
+
+      // Main trips table
+      const mainTableStartY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
+      const tableData = allTrips.map((trip: Trip) => [
+        formatDate(trip.startDate),
+        trip.startPosition,
+        trip.endDestination,
+        trip.category,
+        `${trip.odometerStart.toString()} km`,
+        `${trip.odometerEnd.toString()} km`,
+        `${trip.distance.toFixed(1)} km`,
+        trip.notes || '' // Use notes if available, otherwise blank
+      ]);
+
+      autoTable(doc, {
+        startY: mainTableStartY,
+        head: [['Datum', 'Startadress', 'Slutadress', 'Kategori', 'Mätarställning start', 'Mätarställning slut', 'Sträcka', 'Ändamål']],
+        body: tableData,
+        theme: 'grid',
+        styles: {
+          fontSize: 8,
+          cellPadding: 2,
+          lineColor: [0, 0, 0],
+          lineWidth: 0.5,
+          textColor: [0, 0, 0],
+        },
+        headStyles: {
+          fillColor: [220, 220, 220],
+          textColor: [0, 0, 0],
+          fontSize: 8,
+          fontStyle: 'bold',
+        },
+        margin: { left: 10, right: 10, bottom: 25 },
+        tableWidth: 'auto'
+      });
+
+      // Add page numbers to all pages
+      const pageCount = doc.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(10);
+        doc.text(`Sida ${i} av ${pageCount}`, 
+          pageWidth / 2, 
+          doc.internal.pageSize.getHeight() - 15, 
+          { align: 'center' }
+        );
+      }
+
+      // Generate filename with date range
+      const fromDate = formatDate(dateFromFilter).replace(/\//g, '-');
+      const toDate = formatDate(dateToFilter).replace(/\//g, '-');
+      const filename = `korjournal-${fromDate}-till-${toDate}.pdf`;
+
+      // Download PDF file instead of opening as blob
+      doc.save(filename);
+
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Fel vid generering av PDF');
+    }
+  };
+
   if (loading) {
     return (
       <div className="text-center p-5">
@@ -669,15 +894,25 @@ export default function TripList({ refresh }: TripListProps) {
               </Row>
               <Row className="mt-3">
                 <Col md={12}>
-                  <Button
-                    onClick={generatePDF}
-                    className="btn-apple-primary"
-                    disabled={!exportDriver || !exportRegNumber || !exportPersonNumber || !exportCarModel}
-                  >
-                    Exportera PDF
-                  </Button>
+                  <div className="d-flex gap-2 flex-wrap">
+                    <Button
+                      onClick={generatePDF}
+                      className="btn-apple-primary"
+                      disabled={!exportDriver || !exportRegNumber || !exportPersonNumber || !exportCarModel}
+                    >
+                      Visa som PDF
+                    </Button>
+                    <Button
+                      onClick={downloadPDF}
+                      className="btn-apple-secondary"
+                      disabled={!exportDriver || !exportRegNumber || !exportPersonNumber || !exportCarModel}
+                    >
+                      Spara som PDF
+                    </Button>
+                  </div>
                   <div className="small text-muted mt-2">
-                    Exporterar alla resor som matchar aktuella filter. Filen sparas som travel-report-[datum].pdf<br/>
+                    <strong>Visa som PDF:</strong> Öppnar PDF:en i webbläsaren för visning<br/>
+                    <strong>Spara som PDF:</strong> Laddar ner PDF:en direkt till din dator<br/>
                     Uppgifterna sparas automatiskt när du lämnar fälten.
                   </div>
                 </Col>
