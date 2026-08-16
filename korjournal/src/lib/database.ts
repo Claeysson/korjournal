@@ -20,6 +20,7 @@ export interface Trip {
   batteryConsumption: string;
   batteryRegeneration: string;
   notes: string;
+  isManual?: boolean;
 }
 
 let db: Database | null = null;
@@ -121,6 +122,7 @@ async function recoverDatabase(): Promise<Database | null> {
         batteryConsumption TEXT NOT NULL,
         batteryRegeneration TEXT NOT NULL,
         notes TEXT NOT NULL,
+        isManual BOOLEAN DEFAULT FALSE,
         UNIQUE(startDate, odometerStart, odometerEnd)
       )
     `);
@@ -218,6 +220,7 @@ async function createTables(database: Database): Promise<void> {
       batteryConsumption TEXT NOT NULL,
       batteryRegeneration TEXT NOT NULL,
       notes TEXT NOT NULL,
+      isManual BOOLEAN DEFAULT FALSE,
       UNIQUE(startDate, odometerStart, odometerEnd)
     )
   `);
@@ -228,9 +231,23 @@ async function createTables(database: Database): Promise<void> {
       value TEXT NOT NULL
     )
   `);
+
+  // Add migration for existing databases to add isManual column
+  try {
+    const tableInfo = await database.all(`PRAGMA table_info(trips)`);
+    const hasIsManualColumn = tableInfo.some((column: { name: string }) => column.name === 'isManual');
+    
+    if (!hasIsManualColumn) {
+      console.log('Adding isManual column to existing trips table...');
+      await database.exec(`ALTER TABLE trips ADD COLUMN isManual BOOLEAN DEFAULT FALSE`);
+      console.log('isManual column added successfully');
+    }
+  } catch (error) {
+    console.error('Error checking/adding isManual column:', error);
+  }
 }
 
-export async function insertTrip(trip: Omit<Trip, 'id'>): Promise<number | false> {
+export async function insertTrip(trip: Omit<Trip, 'id'>, isManual: boolean = false): Promise<number | false> {
   const database = await getDatabase();
   
   try {
@@ -238,7 +255,8 @@ export async function insertTrip(trip: Omit<Trip, 'id'>): Promise<number | false
       startDate: trip.startDate,
       odometerStart: trip.odometerStart,
       odometerEnd: trip.odometerEnd,
-      category: trip.category
+      category: trip.category,
+      isManual: isManual
     });
     
     // Use transaction for data integrity
@@ -248,13 +266,13 @@ export async function insertTrip(trip: Omit<Trip, 'id'>): Promise<number | false
       INSERT INTO trips (
         category, startDate, odometerStart, startPosition, endDate, 
         odometerEnd, endDestination, duration, distance, fuelConsumption,
-        title, batteryConsumption, batteryRegeneration, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        title, batteryConsumption, batteryRegeneration, notes, isManual
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       trip.category, trip.startDate, trip.odometerStart, trip.startPosition,
       trip.endDate, trip.odometerEnd, trip.endDestination, trip.duration,
       trip.distance, trip.fuelConsumption, trip.title, trip.batteryConsumption,
-      trip.batteryRegeneration, trip.notes
+      trip.batteryRegeneration, trip.notes, isManual
     ]);
     
     await database.exec('COMMIT');
@@ -350,7 +368,13 @@ export async function getTrips(
   };
 }
 
-export async function updateTrip(id: number, updates: { category?: string; notes?: string }): Promise<boolean> {
+export async function updateTrip(id: number, updates: { 
+  category?: string; 
+  notes?: string; 
+  startPosition?: string; 
+  endDestination?: string; 
+  duration?: string; 
+}): Promise<boolean> {
   try {
     const database = await getDatabase();
     const setClauses = [];
@@ -364,6 +388,21 @@ export async function updateTrip(id: number, updates: { category?: string; notes
     if (updates.notes !== undefined) {
       setClauses.push('notes = ?');
       params.push(updates.notes);
+    }
+    
+    if (updates.startPosition !== undefined) {
+      setClauses.push('startPosition = ?');
+      params.push(updates.startPosition);
+    }
+    
+    if (updates.endDestination !== undefined) {
+      setClauses.push('endDestination = ?');
+      params.push(updates.endDestination);
+    }
+    
+    if (updates.duration !== undefined) {
+      setClauses.push('duration = ?');
+      params.push(updates.duration);
     }
     
     if (setClauses.length === 0) {
@@ -381,6 +420,37 @@ export async function updateTrip(id: number, updates: { category?: string; notes
     return result.changes! > 0;
   } catch (error) {
     console.error('Update trip error:', error);
+    return false;
+  }
+}
+
+export async function deleteTrip(id: number): Promise<boolean> {
+  try {
+    const database = await getDatabase();
+    
+    // First check if the trip exists and is manual
+    const trip = await database.get<{isManual: boolean}>(`
+      SELECT isManual FROM trips WHERE id = ?
+    `, [id]);
+    
+    if (!trip) {
+      console.error('Trip not found:', id);
+      return false;
+    }
+    
+    if (!trip.isManual) {
+      console.error('Cannot delete non-manual trip:', id);
+      return false;
+    }
+    
+    // Delete the trip
+    const result = await database.run(`
+      DELETE FROM trips WHERE id = ? AND isManual = TRUE
+    `, [id]);
+    
+    return result.changes! > 0;
+  } catch (error) {
+    console.error('Delete trip error:', error);
     return false;
   }
 }

@@ -4,19 +4,28 @@ import { useState } from 'react';
 import { Container, Navbar, Nav } from 'react-bootstrap';
 import { useRouter, usePathname } from 'next/navigation';
 import ImportModal from '@/components/ImportModal';
+import AddTripModal from '@/components/AddTripModal';
 
 interface NavBarProps {
   onImportComplete?: () => void;
+  onTripAdded?: () => void;
 }
 
-export default function NavBar({ onImportComplete }: NavBarProps) {
+export default function NavBar({ onImportComplete, onTripAdded }: NavBarProps) {
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showAddTripModal, setShowAddTripModal] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
   const handleImportComplete = () => {
     if (onImportComplete) {
       onImportComplete();
+    }
+  };
+
+  const handleTripAdded = () => {
+    if (onTripAdded) {
+      onTripAdded();
     }
   };
 
@@ -46,12 +55,20 @@ export default function NavBar({ onImportComplete }: NavBarProps) {
               </Nav.Link>
             </Nav>
             <Nav className="ms-auto">
-              <button 
-                className="btn btn-apple-primary"
-                onClick={() => setShowImportModal(true)}
-              >
-                Importera CSV
-              </button>
+              <div className="d-flex gap-2">
+                <button 
+                  className="btn btn-apple-secondary"
+                  onClick={() => setShowAddTripModal(true)}
+                >
+                  Lägg till resa
+                </button>
+                <button 
+                  className="btn btn-apple-primary"
+                  onClick={() => setShowImportModal(true)}
+                >
+                  Importera CSV
+                </button>
+              </div>
             </Nav>
           </Navbar.Collapse>
         </Container>
@@ -61,6 +78,12 @@ export default function NavBar({ onImportComplete }: NavBarProps) {
         show={showImportModal}
         onHide={() => setShowImportModal(false)}
         onImportComplete={handleImportComplete}
+      />
+
+      <AddTripModal
+        show={showAddTripModal}
+        onHide={() => setShowAddTripModal(false)}
+        onSave={handleTripAdded}
       />
     </>
   );

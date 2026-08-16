@@ -7,9 +7,38 @@ function cleanText(text: string): string {
     .replace(/^\uFEFF/, '') // Remove BOM
     .replace(/\s+/g, ' ') // Replace multiple spaces with single space
     .replace(/\u0000/g, '') // Remove null characters
-    .trim();
+    .trim()
+    .replace(/^"(.*)"$/, '$1'); // Strip surrounding quotes from quoted CSV fields
 }
 
+// Volvo's export format changed at some point: the older format has 14 columns
+// (includes a "title" and a separate "batteryRegeneration" column), the newer
+// format has 12 columns (those two are dropped).
+function valuesToTrip(values: string[], mapOkategoriseratToPrivat: boolean): Omit<Trip, 'id'> {
+  const isLegacyFormat = values.length >= 14;
+
+  let category = cleanText(values[0] || '');
+  if (mapOkategoriseratToPrivat && category === 'Okategoriserat') {
+    category = 'Privat';
+  }
+
+  return {
+    category,
+    startDate: cleanText(values[1] || ''),
+    odometerStart: parseInt(cleanText(values[2] || '0')),
+    startPosition: cleanText(values[3] || ''),
+    endDate: cleanText(values[4] || ''),
+    odometerEnd: parseInt(cleanText(values[5] || '0')),
+    endDestination: cleanText(values[6] || ''),
+    duration: cleanText(values[7] || ''),
+    distance: parseFloat(cleanText(values[8] || '0').replace(',', '.')),
+    fuelConsumption: cleanText(values[9] || ''),
+    title: isLegacyFormat ? cleanText(values[10] || '') : '',
+    batteryConsumption: cleanText(values[isLegacyFormat ? 11 : 10] || ''),
+    batteryRegeneration: isLegacyFormat ? cleanText(values[12] || '') : '',
+    notes: cleanText(values[isLegacyFormat ? 13 : 11] || '')
+  };
+}
 
 export function parseCSVData(csvContent: string, mapOkategoriseratToPrivat: boolean = false): Promise<Omit<Trip, 'id'>[]> {
   return new Promise((resolve) => {
@@ -44,33 +73,10 @@ export function parseCSVData(csvContent: string, mapOkategoriseratToPrivat: bool
         
         const values = line.split(';');
         console.log(`Line ${i} has ${values.length} values`);
-        
-        if (values.length >= 14) {
+
+        if (values.length >= 12) {
           try {
-            let category = cleanText(values[0] || '');
-            
-            // Apply category mapping if enabled
-            if (mapOkategoriseratToPrivat && category === 'Okategoriserat') {
-              category = 'Privat';
-              console.log('Mapped "Okategoriserat" to "Privat"');
-            }
-            
-            const trip: Omit<Trip, 'id'> = {
-              category: category,
-              startDate: cleanText(values[1] || ''),
-              odometerStart: parseInt(cleanText(values[2] || '0')),
-              startPosition: cleanText(values[3] || ''),
-              endDate: cleanText(values[4] || ''),
-              odometerEnd: parseInt(cleanText(values[5] || '0')),
-              endDestination: cleanText(values[6] || ''),
-              duration: cleanText(values[7] || ''),
-              distance: parseFloat(cleanText(values[8] || '0').replace(',', '.')),
-              fuelConsumption: cleanText(values[9] || ''),
-              title: cleanText(values[10] || ''),
-              batteryConsumption: cleanText(values[11] || ''),
-              batteryRegeneration: cleanText(values[12] || ''),
-              notes: cleanText(values[13] || '')
-            };
+            const trip = valuesToTrip(values, mapOkategoriseratToPrivat);
 
             console.log('Parsed trip:', {
               category: trip.category,
@@ -138,33 +144,10 @@ export function parseCSVData(csvContent: string, mapOkategoriseratToPrivat: bool
         
         const values = row.split(';');
         console.log(`Row ${i} has ${values.length} values`);
-        
-        if (values.length >= 14) {
+
+        if (values.length >= 12) {
           try {
-            let category = cleanText(values[0] || '');
-            
-            // Apply category mapping if enabled
-            if (mapOkategoriseratToPrivat && category === 'Okategoriserat') {
-              category = 'Privat';
-              console.log('Mapped "Okategoriserad" to "Privat"');
-            }
-            
-            const trip: Omit<Trip, 'id'> = {
-              category: category,
-              startDate: cleanText(values[1] || ''),
-              odometerStart: parseInt(cleanText(values[2] || '0')),
-              startPosition: cleanText(values[3] || ''),
-              endDate: cleanText(values[4] || ''),
-              odometerEnd: parseInt(cleanText(values[5] || '0')),
-              endDestination: cleanText(values[6] || ''),
-              duration: cleanText(values[7] || ''),
-              distance: parseFloat(cleanText(values[8] || '0').replace(',', '.')),
-              fuelConsumption: cleanText(values[9] || ''),
-              title: cleanText(values[10] || ''),
-              batteryConsumption: cleanText(values[11] || ''),
-              batteryRegeneration: cleanText(values[12] || ''),
-              notes: cleanText(values[13] || '')
-            };
+            const trip = valuesToTrip(values, mapOkategoriseratToPrivat);
 
             console.log('Parsed trip:', {
               category: trip.category,

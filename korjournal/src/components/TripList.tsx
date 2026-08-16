@@ -6,6 +6,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Trip } from '@/lib/database';
 import EditTripModal from './EditTripModal';
+import AddTripModal from './AddTripModal';
 
 interface TripListProps {
   refresh: number;
@@ -20,7 +21,10 @@ export default function TripList({ refresh }: TripListProps) {
   const [showExport, setShowExport] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addModalPreset, setAddModalPreset] = useState<{odometerStart?: number; odometerEnd?: number} | null>(null);
   const [corruptionError, setCorruptionError] = useState<string | null>(null);
+  const [missingTripWarnings, setMissingTripWarnings] = useState<Map<number, number>>(new Map());
   const itemsPerPage = 20;
 
   // Filter states
@@ -96,9 +100,14 @@ export default function TripList({ refresh }: TripListProps) {
         setTrips([]);
         setTotal(0);
       } else {
-        setTrips(data.trips || []);
+        const tripsData = data.trips || [];
+        setTrips(tripsData);
         setTotal(data.total || 0);
         setCorruptionError(null);
+        
+        // Detect missing trips and set warnings
+        const warnings = detectMissingTrips(tripsData);
+        setMissingTripWarnings(warnings);
       }
     } catch (error) {
       console.error('Error fetching trips:', error);
@@ -117,6 +126,59 @@ export default function TripList({ refresh }: TripListProps) {
     setTrips(trips.map(trip => 
       trip.id === updatedTrip.id ? updatedTrip : trip
     ));
+  };
+
+  const handleWarningClick = (trip: Trip) => {
+    // Calculate odometer values for the missing trip
+    const previousTrip = trips
+      .filter(t => new Date(t.startDate) < new Date(trip.startDate))
+      .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
+    
+    if (previousTrip) {
+      setAddModalPreset({
+        odometerStart: previousTrip.odometerEnd,
+        odometerEnd: trip.odometerStart
+      });
+      setShowAddModal(true);
+    }
+  };
+
+  const handleAddTripComplete = () => {
+    // Refresh the trip list
+    fetchTrips();
+    setShowAddModal(false);
+    setAddModalPreset(null);
+  };
+
+  const handleDeleteTrip = async (tripId: number) => {
+    const confirmDelete = window.confirm('Är du säker på att du vill ta bort denna resa? Denna åtgärd kan inte ångras.');
+    
+    if (!confirmDelete) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/trips/${tripId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        // Remove the trip from local state
+        setTrips(trips.filter(trip => trip.id !== tripId));
+        setTotal(total - 1);
+        
+        // Update missing trip warnings after deletion
+        const updatedTrips = trips.filter(trip => trip.id !== tripId);
+        const warnings = detectMissingTrips(updatedTrips);
+        setMissingTripWarnings(warnings);
+      } else {
+        const errorData = await response.json();
+        alert(errorData.error || 'Kunde inte ta bort resa');
+      }
+    } catch (error) {
+      console.error('Delete trip error:', error);
+      alert('Ett fel uppstod vid borttagning av resa');
+    }
   };
 
   const totalPages = Math.ceil(total / itemsPerPage);
@@ -173,6 +235,34 @@ export default function TripList({ refresh }: TripListProps) {
     } catch {
       return dateStr;
     }
+  };
+
+  const detectMissingTrips = (trips: Trip[]): Map<number, number> => {
+    const warnings = new Map<number, number>();
+    
+    if (trips.length < 2) return warnings;
+    
+    // Sort trips chronologically by start date
+    const sortedTrips = [...trips].sort((a, b) => 
+      new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+    );
+    
+    // Check for gaps between consecutive trips
+    for (let i = 1; i < sortedTrips.length; i++) {
+      const previousTrip = sortedTrips[i - 1];
+      const currentTrip = sortedTrips[i];
+      
+      // Calculate the gap in odometer readings
+      const gap = currentTrip.odometerStart - previousTrip.odometerEnd;
+      
+      // If gap is greater than 1km, consider it a missing trip
+      // (1km threshold accounts for rounding differences)
+      if (gap > 1) {
+        warnings.set(currentTrip.id!, gap);
+      }
+    }
+    
+    return warnings;
   };
 
   const generatePDF = async () => {
@@ -970,6 +1060,7 @@ export default function TripList({ refresh }: TripListProps) {
               <Table hover className="mb-0 apple-table">
                 <thead>
                   <tr>
+                    <th style={{ width: '30px', textAlign: 'center' }}></th>
                     <th>Kategori</th>
                     <th>Startdatum</th>
                     <th className="d-none d-md-table-cell">Från</th>
@@ -981,35 +1072,86 @@ export default function TripList({ refresh }: TripListProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {trips.map((trip) => (
-                    <tr 
-                      key={trip.id}
-                      onClick={() => handleTripClick(trip)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <td>
-                        <span className={getCategoryBadge(trip.category)}>
-                          {trip.category}
-                        </span>
-                      </td>
-                      <td>
-                        <div>{formatDate(trip.startDate)}</div>
-                        <div className="d-md-none small text-muted">
-                          {trip.startPosition} → {trip.endDestination}
-                        </div>
-                      </td>
+                  {trips.map((trip) => {
+                    const hasMissingTrip = missingTripWarnings.has(trip.id!);
+                    const missingKm = missingTripWarnings.get(trip.id!);
+                    
+                    return (
+                      <tr 
+                        key={trip.id}
+                        onClick={() => handleTripClick(trip)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                          <div className="d-flex justify-content-center align-items-center gap-1">
+                            {hasMissingTrip && (
+                              <button
+                                className="btn btn-sm text-warning p-0"
+                                style={{ 
+                                  border: 'none', 
+                                  background: 'none',
+                                  fontSize: '0.9rem',
+                                  minWidth: 'auto',
+                                  cursor: 'pointer'
+                                }}
+                                title={`Klicka för att lägga till saknad resa: ${missingKm} km saknas före denna resa`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleWarningClick(trip);
+                                }}
+                              >
+                                ⚠️
+                              </button>
+                            )}
+                            {trip.isManual && (
+                              <button
+                                className="btn btn-sm text-danger p-0"
+                                style={{ 
+                                  border: 'none', 
+                                  background: 'none',
+                                  fontSize: '0.8rem',
+                                  minWidth: 'auto'
+                                }}
+                                title="Ta bort resa"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteTrip(trip.id!);
+                                }}
+                              >
+                                🗑️
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <span className={getCategoryBadge(trip.category)}>
+                            {trip.category}
+                          </span>
+                        </td>
+                        <td>
+                          <div>{formatDate(trip.startDate)}</div>
+                          <div className="d-md-none small text-muted">
+                            {trip.startPosition} → {trip.endDestination}
+                          </div>
+                          {hasMissingTrip && (
+                            <div className="small text-warning d-md-none">
+                              Möjlig saknad resa: {missingKm} km saknas
+                            </div>
+                          )}
+                        </td>
                       <td className="text-truncate d-none d-md-table-cell" style={{ maxWidth: '150px' }}>
                         {trip.startPosition}
                       </td>
                       <td className="text-truncate d-none d-md-table-cell" style={{ maxWidth: '150px' }}>
                         {trip.endDestination}
                       </td>
-                      <td className="fw-medium">{trip.distance.toFixed(1)} km</td>
-                      <td className="text-muted small d-none d-sm-table-cell">{trip.fuelConsumption}</td>
-                      <td className="text-muted small d-none d-sm-table-cell">{trip.batteryConsumption} kWh</td>
-                      <td className="text-muted small d-none d-lg-table-cell">{trip.duration}</td>
-                    </tr>
-                  ))}
+                        <td className="fw-medium">{trip.distance.toFixed(1)} km</td>
+                        <td className="text-muted small d-none d-sm-table-cell">{trip.fuelConsumption}</td>
+                        <td className="text-muted small d-none d-sm-table-cell">{trip.batteryConsumption} kWh</td>
+                        <td className="text-muted small d-none d-lg-table-cell">{trip.duration}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </Table>
             </div>
@@ -1090,6 +1232,16 @@ export default function TripList({ refresh }: TripListProps) {
         onHide={() => setShowEditModal(false)}
         trip={selectedTrip}
         onSave={handleTripSave}
+      />
+
+      <AddTripModal
+        show={showAddModal}
+        onHide={() => {
+          setShowAddModal(false);
+          setAddModalPreset(null);
+        }}
+        onSave={handleAddTripComplete}
+        preset={addModalPreset}
       />
     </>
   );

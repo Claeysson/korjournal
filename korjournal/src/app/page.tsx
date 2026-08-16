@@ -12,9 +12,13 @@ export default function Home() {
     setRefreshTrigger(prev => prev + 1);
   };
 
+  const handleTripAdded = () => {
+    setRefreshTrigger(prev => prev + 1);
+  };
+
   return (
     <>
-      <NavBar onImportComplete={handleImportComplete} />
+      <NavBar onImportComplete={handleImportComplete} onTripAdded={handleTripAdded} />
       
       <Container className="py-4">
         <div className="d-flex justify-content-between align-items-center mb-4">
